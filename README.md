@@ -37,88 +37,106 @@
 
 ## 📌 Executive Summary
 
-**VisionShield** is an industrial-grade Computer Vision platform engineered to eradicate preventable workplace injuries through autonomous, continuous PPE compliance monitoring. 
+**VisionShield** is an industrial-grade Computer Vision platform engineered to eradicate preventable workplace injuries through autonomous, continuous PPE compliance monitoring and real-time heavy machinery proximity detection. 
 
-Designed for high-throughput deployment across construction sites, petrochemical plants, and automated manufacturing facilities, VisionShield combines **Ultralytics YOLO11**, **Faster R-CNN (ResNet-50-FPN)**, and **SSD300 (VGG16)** architectures with **ByteTrack** multi-object tracking. By geometrically mapping safety gear to worker skeletons via an **Intersection-over-Area (IoA)** containment matrix, VisionShield delivers sub-millisecond violation detection while eliminating alert fatigue through a debounced, temporal state engine.
+Designed for high-throughput deployment across construction sites, petrochemical plants, automated manufacturing facilities, and warehouse logistics hubs, VisionShield integrates **dual Ultralytics YOLO11 neural backbones** with **ByteTrack** multi-object tracking and an **anti-hallucination OCR persistent memory engine**. By geometrically mapping safety gear to worker skeletons via an **Intersection-over-Area (IoA)** containment matrix and calculating 2D ground-plane machine clearance via **dynamic polygon exclusion zones**, VisionShield delivers sub-millisecond violation detection and imminent collision mitigation while eliminating alert fatigue through debounced temporal state engines.
 
 ---
 
 ## 🏗️ System Pipeline Architecture
 
-The end-to-end processing pipeline continuously ingest video streams, performs real-time neural inference, associates safety gear with specific personnel, computes compliance status, and distributes alerts via FastAPI:
+The end-to-end processing pipeline continuously ingests high-resolution video streams, executes synchronized dual-model neural inference, identifies workers via persistent OCR caching, calculates person-to-gear containment and machine clearance, and dispatches debounced telemetry alerts:
 
 ```mermaid
 flowchart TD
     subgraph S1["1. INGESTION & PREPROCESSING"]
-        A1["🎥 RTSP Site Cameras"] --> B1["OpenCV Frame Streamer"]
+        A1["🎥 RTSP Site Cameras"] --> B1["OpenCV Stream Ingest Engine"]
         A2["📹 USB / Fixed Webcams"] --> B1
-        A3["📼 Drone / CCTV Footage (.mp4)"] --> B1
+        A3["📼 Industrial CCTV / MP4 Files"] --> B1
         B1 --> B2["Frame Resizing & Letterbox (640x640)"]
-        B2 --> B3["Batch Tensor Normalization (GPU)"]
+        B2 --> B3["Batch Tensor Normalization (GPU / CUDA)"]
     end
 
-    subgraph S2["2. MULTI-CLASS DEEP LEARNING BACKBONE"]
-        B3 --> C1["Ultralytics YOLO11n Core Engine"]
-        C1 --> C2["Multi-Scale Feature Pyramid (PAN/FPN)"]
-        C2 --> C3["Anchor-Free Decoupled Detection Head"]
-        C3 --> D1["Worker Detections [Class 5: Person]"]
-        C3 --> D2["PPE Gear Detections [Classes 0-4: Helmet, Gloves, Vest, Boots, Goggles]"]
+    subgraph S2["2. DUAL-MODEL NEURAL INFERENCE ENGINE"]
+        B3 --> C1["Core Model A: 6-Class PPE YOLO11n"]
+        B3 --> C2["Core Model B: 2-Class Industrial Machine YOLO11n"]
+        C1 --> D1["Worker Detections [Class 5: Person]"]
+        C1 --> D2["PPE Gear Detections [Classes 0-4: Helmet, Gloves, Vest, Boots, Goggles]"]
+        C2 --> D3["Machinery Detections [Classes 0-1: Forklift, Production Machine]"]
     end
 
-    subgraph S3["3. TRACKING & SPATIAL GEOMETRY MATCHING"]
-        D1 --> E1["ByteTrack Tracker (Unique Worker IDs & Trajectory)"]
-        E1 --> F1["Worker BBox Margin Expansion (+12% X, +12% Y)"]
-        D2 --> F2["Spatial IoA Containment Matrix Engine"]
-        F1 --> F2
-        F2 --> G1["Per-Worker Gear Assignment Table"]
+    subgraph S3["3. TRACKING & PERSISTENT IDENTIFICATION (OCR)"]
+        D1 --> E1["ByteTrack Multi-Worker Trajectory Tracker"]
+        E1 --> E2{"Worker ID Already Confirmed & Locked?"}
+        E2 -->|NO| E3["Extract Chest ROI & HSV Paper Badge Mask (Sat < 60, Val > 130)"]
+        E3 --> E4["High-Sensitivity Single-Digit CRAFT OCR Recognizer"]
+        E4 --> E5["Zero-Hallucination Filter (Reject '0', '00')"]
+        E5 --> E6{"Confidence >= 0.72 OR Consistent Count >= 2?"}
+        E6 -->|YES| E7["Lock Confirmed ID: e.g. Worker #4 (Halt Further OCR Passes)"]
+        E6 -->|NO| E8["Temporary ID: Worker #UNKNOWN (Continue Periodic Scan)"]
+        E2 -->|YES| E9["Retain Cached Identity Across Frame Occlusions (Zero FPS Loss)"]
     end
 
-    subgraph S4["4. TEMPORAL COMPLIANCE & DEBOUNCE ENGINE"]
-        G1 --> H1{"All 5 Mandatory PPE Items Present?"}
-        H1 -->|YES| I1["Status: SAFE (Green)"]
-        I1 --> I2["Reset Worker Non-Compliance Clock"]
-        H1 -->|NO| J1["Status: UNSAFE (Red)"]
-        J1 --> J2{"Continuous Unsafe >= 15 Seconds?"}
-        J2 -->|NO| J3["Accumulate Violation Clock"]
-        J2 -->|YES| K1["🚨 Trigger Debounced API Alert (15s Cooldown)"]
+    subgraph S4["4. SPATIAL GEOMETRY & PROXIMITY RADAR"]
+        D1 --> F1["Worker Foot Contact Coordinates (x_mid, y_bottom)"]
+        D2 --> F2["Spatial IoA Containment Matrix Engine (Person + 12% Margin)"]
+        D3 --> F3["Machine Ground Base Coordinates & Dynamic Convex Hull Exclusion Polygons"]
+        F1 --> F4["Euclidean Ground Distance Clearance Engine"]
+        F3 --> F4
+        F1 --> F5["cv2.pointPolygonTest (Perimeter Breach Verification)"]
+        F3 --> F5
     end
 
-    subgraph S5["5. TELEMETRY & PRESENTATION LAYER"]
-        I1 --> L1["OpenCV Real-Time HUD Overlay"]
-        J1 --> L1
-        K1 --> M1["POST /violation (Instant Alert Dispatch)"]
-        I2 --> M2["POST /detection/update (Site Telemetry)"]
-        J3 --> M2
-        M1 --> N1["FastAPI Central Monitoring Core"]
-        M2 --> N1
-        N1 --> O1["📊 Live Safety Dashboard"]
-        N1 --> O2["🔔 Automated Audits & Webhooks"]
+    subgraph S5["5. MULTI-THREAT TEMPORAL STATE & DEBOUNCING"]
+        F2 --> G1{"All 5 Mandatory PPE Present?"}
+        G1 -->|YES| G2["PPE Status: SAFE (Green)"]
+        G1 -->|NO| G3{"Continuous Non-Compliance >= 15 Seconds?"}
+        G3 -->|YES| G4["🚨 Trigger Debounced PPE Violation Alert"]
+        G3 -->|NO| G5["Accumulate Violation Clock"]
+
+        F4 & F5 --> H1{"Worker Feet Inside Exclusion Hull OR Dist < Threshold?"}
+        H1 -->|YES| H2["⚠️ PROXIMITY HAZARD: Flashing Red Alert (Target: Forklift/Machine)"]
+        H1 -->|CAUTION| H3["⚡ WARNING: Approaching Equipment (Yellow Indicator)"]
+        H1 -->|NO| H4["Clearance Safe (Normal Operations)"]
+    end
+
+    subgraph S6["6. TELEMETRY & PRESENTATION LAYER"]
+        G2 & G4 & H2 & H4 & E7 --> I1["OpenCV Real-Time HUD Overlay (Badges, Checklists, Danger Polygons)"]
+        G4 & H2 --> I2["POST /violation (Debounced Instant Alert Dispatch)"]
+        I1 --> I3["POST /detection/update (Telemetry Stream: Headcount & Proximity Events)"]
+        I2 & I3 --> I4["FastAPI Central Monitoring Backend (:8000)"]
+        I4 --> I5["📊 Industrial Safety Dashboard & Automated Siren Relays"]
     end
 
     classDef ingest fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
     classDef infer fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#f8fafc;
-    classDef track fill:#172554,stroke:#60a5fa,stroke-width:2px,color:#f8fafc;
+    classDef ocr fill:#14532d,stroke:#4ade80,stroke-width:2px,color:#f8fafc;
+    classDef spatial fill:#172554,stroke:#60a5fa,stroke-width:2px,color:#f8fafc;
     classDef engine fill:#450a0a,stroke:#f87171,stroke-width:2px,color:#f8fafc;
     classDef output fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#f8fafc;
 
     class A1,A2,A3,B1,B2,B3 ingest;
-    class C1,C2,C3,D1,D2 infer;
-    class E1,F1,F2,G1 track;
-    class H1,I1,I2,J1,J2,J3,K1 engine;
-    class L1,M1,M2,N1,O1,O2 output;
+    class C1,C2,D1,D2,D3 infer;
+    class E1,E2,E3,E4,E5,E6,E7,E8,E9 ocr;
+    class F1,F2,F3,F4,F5 spatial;
+    class G1,G2,G3,G4,G5,H1,H2,H3,H4 engine;
+    class I1,I2,I3,I4,I5 output;
 ```
 
 ---
 
 ## 📐 Spatial Association & Containment Geometry
 
-Rather than merely counting PPE items in a frame, VisionShield solves the **Person-to-Gear Assignment Problem**. It determines whether a piece of safety equipment is physically worn by a specific worker.
+VisionShield combines two complementary mathematical models to evaluate physical safety on the factory floor: **Person-to-Gear IoA Containment** and **2D Ground-Plane Machine Proximity Radar**.
+
+### 1. Person-to-Gear IoA Containment Formulation
+Rather than merely counting PPE items in a frame, VisionShield solves the **Person-to-Gear Assignment Problem**. It determines whether a piece of safety equipment is physically worn by a specific worker:
 
 ```mermaid
 flowchart LR
     subgraph Geo["IoA Mathematical Formulation"]
         direction TB
-        B1["Worker Bounding Box<br/><b>[X1, Y1, X2, Y2]</b>"] --> B2["Margin Inflation<br/><b>X ± 12%, Y ± 12%</b>"]
+        B1["Worker Bounding Box<br/><b>[X1, Y1, X2, Y2]</b>"] --> B2["Adaptive Margin Expansion<br/><b>X ± 12%, Top +25%, Bottom +12%</b>"]
         P1["Detected Gear Box<br/><b>[x1, y1, x2, y2]</b>"] --> B3["Intersection Box Area<br/><b>Area(PPE ∩ Worker_expanded)</b>"]
         B2 --> B3
         B3 --> B4["Calculate IoA Ratio<br/><b>IoA = Intersection / Area(PPE)</b>"]
@@ -131,45 +149,90 @@ flowchart LR
 $$\text{IoA} = \frac{\text{Area}(\text{PPE} \cap \text{Worker}_{\text{expanded}})}{\text{Area}(\text{PPE})}$$
 
 > [!NOTE]
-> **Why Bounding Box Expansion?**
-> Standard human bounding boxes frequently clip safety helmets at the crown and steel-toe boots at the ground contact plane. VisionShield applies an adaptive $12\%$ lateral and vertical margin expansion to preserve gear association fidelity even during rapid posture changes.
+> **Adaptive Margin Expansion**: Standard person bounding boxes frequently truncate helmets above the crown and work boots at the ground contact plane. VisionShield applies an asymmetrical bounding box expansion ($+12\%$ horizontal, $+25\%$ top crown, $+12\%$ bottom contact) to preserve gear attribution fidelity across varied operator postures.
 
 ---
 
-## 🔄 Worker Compliance Lifecycle
+### 2. 2D Ground-Plane Machine Proximity & Exclusion Zone Geometry
+To prevent collisions between workers and heavy industrial equipment (such as moving forklifts or high-speed production machinery), VisionShield maps 3D physical workspace proximity onto a calibrated 2D ground contact plane:
 
-Workers are managed as stateful entities through ByteTrack. Compliance status transitions through an anti-flicker debouncing engine:
+```mermaid
+flowchart LR
+    subgraph Prox["Proximity & Dynamic Hull Formulation"]
+        direction TB
+        W1["Worker Foot Contact Point<br/><b>P_feet = ((x1+x2)/2, y2)</b>"] --> C1["Euclidean Ground Distance Matrix<br/><b>d_norm = ||P_feet - P_machine|| / diag(Frame)</b>"]
+        M1["Machine Base Anchor Point<br/><b>P_machine = ((mx1+mx2)/2, my2)</b>"] --> C1
+        M2["Machine Dynamic Exclusion Hull<br/><b>Polygon Expanded by Clearance Margin</b>"] --> C2["Point-in-Polygon Inclusion Test<br/><b>cv2.pointPolygonTest(Hull, P_feet)</b>"]
+        W1 --> C2
+        C1 & C2 --> C3{"Inclusion >= 0 OR d_norm <= Threshold?"}
+        C3 -->|YES| E1["🚨 CRITICAL PROXIMITY HAZARD (Red Pulsing)"]
+        C3 -->|NO| E2["✅ Safe Clearance Envelope (Normal Green)"]
+    end
+```
+
+#### Ground Anchor Points:
+- **Worker Foot Coordinate**: 
+  $$P_{\text{worker}} = \left(\frac{x_1 + x_2}{2}, y_2\right)$$
+- **Machine Base Coordinate**: 
+  $$P_{\text{machine}} = \left(\frac{mx_1 + mx_2}{2}, my_2\right)$$
+
+#### Normalized Clearance Distance:
+$$d_{\text{norm}} = \frac{\sqrt{\left(\frac{x_1 + x_2}{2} - \frac{mx_1 + mx_2}{2}\right)^2 + (y_2 - my_2)^2}}{\sqrt{W_{\text{frame}}^2 + H_{\text{frame}}^2}}$$
+
+#### Dynamic Exclusion Polygon Test:
+$$\text{Hazard Status} = \begin{cases} \mathbf{\text{CRITICAL DANGER}}, & \text{if } \text{pointPolygonTest}(\mathcal{P}_{\text{exclusion}}, P_{\text{worker}}, \text{False}) \ge 0 \\ \mathbf{\text{CAUTION}}, & \text{if } 0 < d_{\text{norm}} \le \tau_{\text{warn}} \\ \mathbf{\text{SAFE CLEARANCE}}, & \text{otherwise} \end{cases}$$
+
+---
+
+## 🔄 Worker Compliance & Safety State Machine
+
+VisionShield operates a synchronized dual state engine governing **Worker Identity Verification** and **Multi-Hazard Alert Escalation**:
 
 ```mermaid
 stateDiagram-v2
     [*] --> Unobserved
-    Unobserved --> Tracked : Worker Enters Frame (YOLO11 Detection)
+    Unobserved --> ActiveTracking : Worker Detected by YOLO11n
 
-    state "Active Tracking Session (ByteTrack ID)" as Active {
-        Tracked --> Evaluating : Real-Time IoA Gear Association
-        Evaluating --> SafeState : All 5 Gear Items Verified (IoA >= 0.20)
-        Evaluating --> PendingViolation : Missing >= 1 PPE Item
-
-        SafeState --> PendingViolation : PPE Item Removed / Obscured
+    state "Stateful Worker Session (ByteTrack Trajectory)" as ActiveTracking {
         
-        state PendingViolation {
-            [*] --> AccumulateTimer : Start Violation Clock
-            AccumulateTimer --> AccumulateTimer : Duration < 15s (Debounce Window)
+        state "1. Worker Identity Sub-Engine" as IdentityEngine {
+            [*] --> Unidentified : Initial Assignment (Worker #UNKNOWN)
+            Unidentified --> BadgeExtraction : Periodic Sample (Every N Frames)
+            BadgeExtraction --> OCRVerification : HSV Filter + Single-Digit CRAFT
+            OCRVerification --> Unidentified : Non-Positive Digits Rejected ('0', '00')
+            OCRVerification --> IdentityLocked : Consistent Vote Count >= 2 OR Conf >= 0.72
+            
+            state IdentityLocked {
+                [*] --> PersistentMemory : Bind Worker #ID (e.g. Worker #4)
+                PersistentMemory --> PersistentMemory : Suspend Heavy OCR Passes (Conserve FPS)
+                PersistentMemory --> PersistentMemory : Retain Identity Across Occlusion
+            }
         }
 
-        PendingViolation --> SafeState : Missing Gear Re-equipped (Clock Reset)
-        PendingViolation --> EscalatedAlarm : Duration >= 15 Seconds Continuous
+        --
 
-        state EscalatedAlarm {
-            [*] --> DispatchPOST : POST /violation to FastAPI Server
-            DispatchPOST --> CooldownState : Throttled 15-Second Alarm Cooldown
-            CooldownState --> DispatchPOST : Still Non-Compliant
+        state "2. Multi-Hazard Safety Sub-Engine" as SafetyEngine {
+            [*] --> EvaluatingHazards : Real-Time IoA & Proximity Ingest
+            
+            state "PPE Compliance State" as PPEState {
+                EvaluatingHazards --> PPESafe : All 5 Gear Items Verified (IoA >= 0.20)
+                EvaluatingHazards --> PPEViolationPending : Missing >= 1 PPE Item
+                PPEViolationPending --> PPESafe : Missing Gear Re-equipped
+                PPEViolationPending --> PPEAlarmEscalated : Non-Compliance >= 15.0s Continuous
+                PPEAlarmEscalated --> PPESafe : Compliance Restored
+            }
+
+            state "Machinery Proximity State" as ProximityState {
+                EvaluatingHazards --> ClearanceSafe : Distance > Proximity Threshold
+                EvaluatingHazards --> ProximityWarning : Distance <= Caution Zone
+                EvaluatingHazards --> ImminentCollisionAlert : Footprint Inside Equipment Hull
+                ProximityWarning --> ClearanceSafe : Worker Retreats to Safe Distance
+                ImminentCollisionAlert --> ClearanceSafe : Separation Restored
+            }
         }
-
-        EscalatedAlarm --> SafeState : Compliance Restored (Alarm Cleared)
     }
 
-    Active --> Unobserved : Worker Exits Camera View (ID Garbage Collected)
+    ActiveTracking --> Unobserved : Worker Exits Camera FOV (Memory Garbage Collected)
 ```
 
 ---
@@ -272,17 +335,29 @@ Faster R-CNN  [==========                                        ] 18 FPS  | mAP
 
 ---
 
-## 🏷️ Class Taxonomies
+## 🏷️ Dual Model Class Taxonomies
 
-### Core 6-Class Specification (Recommended)
-| Class ID | Item | Visual Indicator | Status in Safety Evaluation |
+VisionShield's dual-engine architecture concurrently queries two distinct, specialized neural class spaces:
+
+### 1. Personnel & PPE 6-Class Specification (`best.pt`)
+*Model path: `runs/detect/visionshield_6class_yolo11n_10ep/weights/best.pt`*
+
+| Class ID | Item | Visual Indicator / Color Scheme | Status in Safety Evaluation |
 | :---: | :--- | :--- | :---: |
-| `0` | **helmet** | Yellow / White / Blue Hard Hat | **Mandatory** |
-| `1` | **gloves** | High-Grip Safety Gloves | **Mandatory** |
-| `2` | **vest** | High-Visibility Florescent Vest | **Mandatory** |
-| `3` | **boots** | Heavy-Duty Protective Boots | **Mandatory** |
-| `4` | **goggles** | Impact Safety Glasses / Visor | **Mandatory** |
-| `5` | **Person** | Worker Silhouette | **Primary Subject** |
+| `0` | **helmet** | Yellow / White / Blue / Red Hard Hat | **Mandatory PPE** |
+| `1` | **gloves** | High-Grip Work Gloves | **Mandatory PPE** |
+| `2` | **vest** | High-Visibility Reflective / Fluorescent Vest | **Mandatory PPE** |
+| `3` | **boots** | Steel-Toe Work Boots | **Mandatory PPE** |
+| `4` | **goggles** | Impact Safety Glasses / Clear Visors | **Mandatory PPE** |
+| `5` | **Person** | Full Worker Body Silhouette | **Primary Tracked Subject** |
+
+### 2. Industrial Machinery 2-Class Specification (`best.pt`)
+*Model path: `visionshield_machine_detector_starter/runs/detect/runs/detect/visionshield_machine_2class_aug40/weights/best.pt`*
+
+| Class ID | Machinery Class | Hazard Characteristics | Exclusion Zone Behavior |
+| :---: | :--- | :--- | :--- |
+| `0` | **forklift** | Mobile transport vehicle, dynamic trajectories, blind spots | Dynamic perimeter expansion based on velocity & motion vector |
+| `1` | **production_machine** | Heavy stationary stamping presses, conveyor lines, robotic cells | Static high-risk safety envelope around mechanical pinch points |
 
 ---
 
