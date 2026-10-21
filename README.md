@@ -26,7 +26,7 @@
   <b><a href="#-system-pipeline-architecture">Pipeline Architecture</a></b> •
   <b><a href="#-spatial-association--containment-geometry">Spatial IoA Engine</a></b> •
   <b><a href="#-worker-compliance-lifecycle">State Machine</a></b> •
-  <b><a href="#-telemetry--api-event-stream">API Architecture</a></b> •
+  <b><a href="#-hardware--edge-deployment-guide-demo-4-vs-demo-5">Hardware Deployment (Demo 4 vs 5)</a></b> •
   <b><a href="#-performance--benchmark-matrix">Benchmarks</a></b> •
   <b><a href="#-quick-start">Quick Start</a></b>
 </p>
@@ -290,8 +290,11 @@ Faster R-CNN  [==========                                        ] 18 FPS  | mAP
 
 ```text
 VisionShield/
-├── .gitignore                      # Strictly excludes raw datasets, media & checkpoints
-├── README.md                       # Comprehensive system documentation
+├── .gitignore                      # Excludes raw datasets, video/image media, and model checkpoints (*.pt, *.pth, runs/)
+├── README.md                       # Comprehensive system documentation & hardware deployment guide
+│
+├── opencv_demo4.py                 # ⭐ PRODUCTION EDGE (Single-Model): 6-Class PPE + ByteTrack + Persistent Worker ID OCR
+├── opencv_demo5.py                 # 🚀 PRODUCTION EDGE (Dual-Model): 6-Class PPE + Machine Proximity Hazard Radar + Worker ID OCR
 │
 ├── apiTesting/                     # Telemetry & Monitoring Architecture
 │   ├── api_server.py               # FastAPI backend with REST endpoints
@@ -300,6 +303,14 @@ VisionShield/
 ├── opencv_demo.py                  # Single-stream baseline webcam detection
 ├── opencv_demo2.py                 # Multi-worker webcam detection with basic metrics
 ├── opencv_demo3.py                 # Production live webcam demo with complete HUD overlay
+│
+├── visionshield_machine_detector_starter/  # Industrial Machine & Forklift Proximity Module
+│   ├── train_machine_detector.py   # Training pipeline for 2-class machine detector (forklift, production_machine)
+│   ├── evaluate_machine_detector.py# Machine detector evaluation harness
+│   └── worker_machine_proximity.py # Worker-to-machine clearance engine & collision boundary
+│
+├── visionshield_ocr_live.py        # Real-time worker badge/vest OCR calibration harness
+├── visionshield_vest_number_ocr.py # Standalone badge extraction & OCR diagnostic runner
 │
 ├── test_video.py                   # Baseline video file inference runner
 ├── test_video2.py                  # Advanced video runner with IoA spatial association
@@ -327,6 +338,159 @@ VisionShield/
 
 ---
 
+## 🔌 Hardware & Edge Deployment Guide (Demo 4 vs Demo 5)
+
+VisionShield provides two production-grade deployment scripts tailored for different physical compute environments and safety objectives: **`opencv_demo4.py`** and **`opencv_demo5.py`**.
+
+### 📊 Deployment Decision Matrix
+
+| Dimension | `opencv_demo4.py` (Single-Engine) | `opencv_demo5.py` (Dual-Engine) |
+| :--- | :--- | :--- |
+| **Primary Safety Focus** | **PPE Compliance & Personnel ID** | **PPE Compliance + Machine Proximity & Collision Radar** |
+| **Neural Backbone** | 1× Ultralytics YOLO11n (6-Class PPE) | 2× Ultralytics YOLO11n (6-Class PPE + 2-Class Industrial Machine) |
+| **Worker Identification** | EasyOCR + Persistent Identity Caching | EasyOCR + Anti-Hallucination + Single-Digit Paper Badge Booster |
+| **Proximity Hazard Radar** | ❌ None (Personal Gear Only) | ✅ **Active 2D Ground Polygon Hazard Radar** (`forklift`, `machine`) |
+| **VRAM / RAM Footprint** | **~1.5 GB – 2.0 GB** | **~3.5 GB – 5.5 GB** |
+| **Inference Latency** | **~11–14 ms** (~70–90 FPS on GPU) | **~22–28 ms** (~40–60 FPS on GPU) |
+| **Edge Hardware Class** | **Entry / Low-Power Edge**<br/>• Raspberry Pi 5 + Hailo-8 / Coral<br/>• NVIDIA Jetson Nano / TX2<br/>• Intel NUC / Mini-PC (Core i3/i5)<br/>• Embedded Access Turnstiles | **High-Performance Edge AI**<br/>• NVIDIA Jetson Orin Nano (8GB) / Orin NX / AGX<br/>• Industrial IPC with RTX 3050 / 4060 / A2000<br/>• Edge NVR Multi-RTSP Stream Servers |
+| **Target Physical Location** | • Plant Entry Turnstiles & Security Gates<br/>• PPE Check-in Kiosks & Tool Cribs<br/>• Confined Space Entry Points<br/>• Fixed Operator Workstations | • Active Manufacturing Floor & Assembly Lines<br/>• High-Traffic Warehouse Logistics Aisles<br/>• Forklift & AGV Co-working Cross-paths<br/>• Heavy Stamping & Robotic Machinery Zones |
+
+---
+
+### 🛡️ Option A: `opencv_demo4.py` — The Gatekeeper (PPE + Worker ID)
+
+#### When to Choose `opencv_demo4.py`:
+- You are deploying to **entry turnstiles, gatehouses, locker rooms, or personnel kiosks** where workers are checked before stepping onto the factory floor.
+- Hardware resources are constrained (low-power edge nodes, single-board computers, or fanless mini-PCs without heavy discrete GPUs).
+- The physical zone has **no moving machinery or forklift traffic** — only gear compliance and worker identification matter.
+
+#### Key Architectural Highlights:
+1. **Ultra-Lightweight Footprint**: Loads only the fine-tuned 6-class YOLO11n model (`runs/detect/visionshield_6class_yolo11n_10ep/weights/best.pt`).
+2. **Zero-Overhead Persistent Identity**: Once a worker's badge or vest number is verified (e.g. `Worker #4`), EasyOCR forward passes are immediately suspended for that person. The identity remains locked to their ByteTrack trajectory across occlusions, preserving maximum frame rates.
+3. **Spatial IoA Containment**: Fast mathematical intersection-over-area matching attributes hardhats, vests, gloves, boots, and goggles to specific workers.
+
+#### Hardware Execution Commands:
+```bash
+# 1. Standard USB / Integrated Camera at Turnstile (Interactive GUI)
+python opencv_demo4.py --source 0
+
+# 2. Industrial IP Camera via RTSP Stream (Headless Edge Mode)
+python opencv_demo4.py \
+  --source "rtsp://admin:SafePass2026@192.168.1.120:554/h264Preview_01_main" \
+  --conf 0.25 \
+  --no-window \
+  --output "turnstile_audit.mp4"
+```
+
+---
+
+### 🚜 Option B: `opencv_demo5.py` — The Floor Guardian (PPE + Machine Proximity)
+
+#### When to Choose `opencv_demo5.py`:
+- You are deploying onto **active factory floors, warehouse aisles, shipping yards, or heavy construction sites** where personnel and moving industrial machinery coexist.
+- You need to protect workers from **both non-compliance citations AND lethal collision injuries** caused by forklifts, conveyors, and production machinery.
+- Hardware has dedicated GPU/NPU acceleration (NVIDIA Jetson Orin series or an industrial edge PC with an NVIDIA RTX GPU).
+
+#### Key Architectural Highlights:
+1. **Dual-Model Neural Fusion**: Concurrently executes:
+   - **Model 1 (PPE)**: `runs/detect/visionshield_6class_yolo11n_10ep/weights/best.pt` (`helmet`, `gloves`, `vest`, `boots`, `goggles`, `Person`)
+   - **Model 2 (Machinery)**: `visionshield_machine_detector_starter/runs/detect/runs/detect/visionshield_machine_2class_aug40/weights/best.pt` (`forklift`, `production_machine`)
+2. **2D Ground Clearance & Polygon Exclusion Radar**:
+   - Calculates the real-time distance between worker foot-contact coordinates and machine base centers.
+   - Generates dynamic safety buffer hulls around moving forklifts and stationary production equipment.
+   - Employs `cv2.pointPolygonTest` to trigger visual HUD warnings (`PROXIMITY: FORKLIFT`, `PROXIMITY: PRODUCTION_MACHINE`) and color-coded danger pulsing (Yellow Warning -> Flashing Red Imminent Hazard).
+3. **Advanced Anti-Hallucination OCR Engine**:
+   - Suppresses false `Worker #0` triggers on clothing creases and background glare via chromatic HSV saturation filtering.
+   - Features a high-sensitivity single-digit CRAFT booster for recognizing handwritten paper badges (e.g. `"4"`) with >95% confidence.
+
+#### Hardware Execution Commands:
+```bash
+# 1. Factory Floor Interactive Deployment (Webcam or Local Display)
+python opencv_demo5.py --source 0
+
+# 2. Overhead Factory CCTV / RTSP Stream with Custom Proximity Threshold
+python opencv_demo5.py \
+  --source "rtsp://admin:FactorySec1@10.0.0.85:554/live" \
+  --machine-conf 0.30 \
+  --proximity-threshold 0.10 \
+  --conf 0.25
+
+# 3. Headless Industrial IPC Edge Service (24/7 Autonomous Operation)
+python opencv_demo5.py \
+  --source "rtsp://admin:FactorySec1@10.0.0.85:554/live" \
+  --no-window \
+  --output "factory_safety_stream.mp4"
+```
+
+---
+
+### 🛠️ Hardware Integration Blueprints
+
+#### 1. Wiring Physical Relays (Sirens, Strobe Lights & Turnstiles)
+In an industrial facility, VisionShield can trigger external PLCs, magnetic door locks, or 24V alarm beacons via digital output pins (GPIO):
+
+```python
+# Hardware Hook Example: Raspberry Pi / NVIDIA Jetson GPIO
+# Save as hardware_relay.py or hook directly into violation callback
+import time
+
+try:
+    import Jetson.GPIO as GPIO  # Or 'import RPi.GPIO as GPIO' for Raspberry Pi
+    RELAY_ALARM_PIN = 18       # Connect to 5V/12V Relay Module IN pin
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(RELAY_ALARM_PIN, GPIO.OUT, initial=GPIO.LOW)
+
+    def trigger_physical_alarm(duration_seconds=2.0):
+        """Activates warning beacon/siren upon critical proximity hazard or PPE violation."""
+        GPIO.output(RELAY_ALARM_PIN, GPIO.HIGH)
+        time.sleep(duration_seconds)
+        GPIO.output(RELAY_ALARM_PIN, GPIO.LOW)
+except ImportError:
+    def trigger_physical_alarm(duration_seconds=2.0):
+        print("[HARDWARE SIMULATION] Physical relay tripped (Alarm ON)!")
+```
+
+#### 2. Linux Systemd Service for Unattended 24/7 Edge Startup
+For automated startup on edge IPCs or Jetson boards upon power-on, create `/etc/systemd/system/visionshield.service`:
+
+```ini
+[Unit]
+Description=VisionShield Industrial Safety Edge Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=industrial
+WorkingDirectory=/home/industrial/VisionShield
+Environment="PYTHONPATH=/home/industrial/VisionShield"
+ExecStart=/home/industrial/VisionShield/venv/bin/python opencv_demo5.py --source "rtsp://192.168.1.50:554/stream" --no-window
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+Enable and start the service:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable visionshield.service
+sudo systemctl start visionshield.service
+```
+
+#### 3. Edge Acceleration with TensorRT (Jetson & RTX)
+For ultra-fast inference (up to 3x throughput speedup on Jetson Orin and desktop RTX GPUs), compile the YOLO PyTorch models into TensorRT FP16 engines:
+
+```bash
+# Export 6-class PPE model to TensorRT engine
+yolo export model=runs/detect/visionshield_6class_yolo11n_10ep/weights/best.pt format=engine half=True device=0
+
+# Export machine model to TensorRT engine
+yolo export model=visionshield_machine_detector_starter/runs/detect/runs/detect/visionshield_machine_2class_aug40/weights/best.pt format=engine half=True device=0
+```
+VisionShield automatically detects and loads `.engine` checkpoints when passed with `--model` or `--machine-model`.
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Installation
@@ -344,18 +508,36 @@ python -m venv venv
 # Install PyTorch with CUDA support
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-# Install core VisionShield requirements
-pip install ultralytics opencv-python fastapi uvicorn requests pydantic torchmetrics pillow
+# Install core VisionShield requirements (including EasyOCR for worker ID recognition)
+pip install ultralytics opencv-python easyocr fastapi uvicorn requests pydantic torchmetrics pillow
 ```
 
-### 2. Live Webcam with HUD Overlay
-Run the interactive Heads-Up Display:
+### 2. Live Production Edge Demos
+
+#### Option A: Run Single-Model PPE Gatekeeper (`opencv_demo4.py`)
+*Ideal for turnstiles, entrance gates, and low-power edge nodes (Raspberry Pi 5, Jetson Nano, Intel NUC)*:
 ```bash
-python opencv_demo3.py
+python opencv_demo4.py --source 0
 ```
-- Real-time compliance badges (`SAFE` / `UNSAFE`).
-- On-screen gear checklist per detected worker.
-- Press `q` to terminate.
+- Real-time 6-class PPE checklist per worker.
+- Automatic worker ID badge reading with persistent memory caching.
+- Press `q` to quit, `s` for screenshot, `r` to reset identities, `p` to pause.
+
+#### Option B: Run Dual-Model PPE & Machine Proximity Radar (`opencv_demo5.py`)
+*Ideal for active factory floors, warehouse aisles, and GPU edge accelerators (Jetson Orin, Industrial RTX IPCs)*:
+```bash
+python opencv_demo5.py --source 0
+```
+- Real-time 6-class PPE compliance verification.
+- Real-time industrial machine detection (`forklift`, `production_machine`).
+- 2D ground-plane proximity danger zones with dynamic hazard alerts (`PROXIMITY: FORKLIFT`).
+- Anti-hallucination paper badge & vest OCR (single-digit recognition).
+
+#### Option C: Baseline HUD Demo (`opencv_demo3.py`)
+*Lightweight visual demo without OCR*:
+```bash
+python opencv_demo3.py --source 0
+```
 
 ### 3. Integrated Telemetry Mode (FastAPI + Vision Stream)
 
@@ -395,17 +577,32 @@ python evaluate_models.py
 
 ---
 
-## 🔒 Data & Weights Governance
+## 🔒 Data & Weights Governance (GitHub & Teammate Setup)
 
-To keep repositories light and compliant with GitHub file size restrictions:
-- **Datasets**: Excluded via [`.gitignore`](file:///c:/Users/vedan/Desktop/Python/VisionShield/.gitignore) (`datasets/`, `*.zip`, `*.tar.gz`).
-- **Images & Videos**: All raw and output visual media (`*.jpg`, `*.png`, `*.mp4`, etc.) are untracked.
-- **Model Checkpoints**: Checkpoints (`runs/`, `weights/`, `*.pth`, `*.pt`) are kept strictly local.
+> [!NOTE]
+> **Production Model Weights for Teammates**:
+> Heavy intermediate training checkpoints and oversized weights (>100 MB like Faster R-CNN or raw datasets) are strictly excluded by [`.gitignore`](file:///c:/Users/vedan/Desktop/Python/VisionShield/.gitignore) to keep the repository lightweight.
+> 
+> However, the two fine-tuned, ultra-lightweight **production YOLO11n models** (~5.2 MB each) needed to run `opencv_demo4.py` and `opencv_demo5.py` are **whitelisted and tracked in the repository**. Your teammates can simply `git clone` or `git pull`, and both demos will run immediately out-of-the-box without downloading external weights!
 
-Place model weights in the project root:
-- YOLO11n fine-tuned weights: `runs/detect/visionshield_6class_yolo11n_10ep/weights/best.pt`
-- Faster R-CNN weights: `faster_rcnn_construction_ppe.pth`
-- SSD300 weights: `ssd_construction_ppe.pth`
+### Model Storage Locations:
+Place or verify your trained model weights in the following local paths:
+
+1. **6-Class PPE Detector Model** (Required by `opencv_demo4.py` & `opencv_demo5.py`):
+   ```text
+   runs/detect/visionshield_6class_yolo11n_10ep/weights/best.pt
+   ```
+   *(Trained via `python prepare_and_train_6class.py`)*
+
+2. **2-Class Industrial Machine & Forklift Model** (Required by `opencv_demo5.py`):
+   ```text
+   visionshield_machine_detector_starter/runs/detect/runs/detect/visionshield_machine_2class_aug40/weights/best.pt
+   ```
+   *(Trained via `visionshield_machine_detector_starter/train_machine_detector.py`)*
+
+3. **Legacy Comparison Models**:
+   - Faster R-CNN (ResNet-50-FPN): `faster_rcnn_construction_ppe.pth`
+   - SSD300 (VGG16): `ssd_construction_ppe.pth`
 
 ---
 

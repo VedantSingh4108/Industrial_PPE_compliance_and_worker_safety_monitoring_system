@@ -63,13 +63,30 @@ construction-ppe/
 *.pwf
 *.onnx
 *.engine
+*.plan
 *.tflite
 *.bin
 *.weights
 *.h5
+*.hdf5
 *.ckpt
+*.safetensors
+*.torchscript
+*.mlmodel
+*.pb
+*.savedmodel
 runs/
+*/runs/
+**/runs/
 weights/
+*/weights/
+**/weights/
+.EasyOCR/
+EasyOCR/
+
+# Whitelist production model weights for deployment & teammates (< 6MB each)
+!runs/detect/visionshield_6class_yolo11n_10ep/weights/best.pt
+!visionshield_machine_detector_starter/runs/detect/runs/detect/visionshield_machine_2class_aug40/weights/best.pt
 
 # ------------------------------------------------------------------------------
 # Output & Audit Directories

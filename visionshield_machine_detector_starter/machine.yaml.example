@@ -1,0 +1,10 @@
+# Copy to datasets/machine_detector/machine.yaml and update the path.
+path: C:/Users/vedan/Desktop/Python/VisionShield/datasets/machine_detector
+train: images/train
+val: images/val
+test: images/test  # Optional; remove this line if no test split exists yet.
+
+names:
+  0: forklift
+  1: conveyor
+  2: industrial_machine
